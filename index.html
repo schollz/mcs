@@ -51,9 +51,9 @@
             </p>
         </div>
         <br>
-        qn / measure: <input v-model='qnPerMeasure' type='number' size=2>
+        qn / measure: <input v-model='options.qn_per_measure' type='number' size=2>
         <br>
-        tempo: <input v-model='tempo' type='number' size=2>
+        tempo: <input v-model='options.tempo' type='number' size=2>
         <br>
         <button v-on:click="startSong">
             Start
@@ -61,11 +61,11 @@
         <button v-on:click="stopSong">
             Stop
         </button>
-        <button v-on:click="parts.push({text:``});">
+        <button v-on:click="parts.push({text:``,legato:100});">
             Add part
         </button>
         <p v-for='(part,parti) in parts'>
-            part {{parti}}
+            part {{parti}}, legato: <input v-model='parts[parti].legato' type='number' size=2 min=0 max=100>
             <textarea rows=6 v-model='parts[parti].text'></textarea>
         </p>
     </div>
@@ -75,21 +75,22 @@
     <script src="./static/js/tonal.min.js"></script>
     <script src="./static/js/webmidi.js"></script>
     <script>
+    const PULSES_PER_QUARTER_NOTE = 24;
+
     var app = new Vue({
         el: '#app',
         data: {
             message: '',
             devices: [{ name: 'op-1', part: 0 }, { name: 'sh01a', part: 0 }],
-            parts: [{ text: 'CEG\nFAC FAC\nAEC AEC AEC AEC AEC AEC AEC AEC AEC AEC AEC AEC AEC AEC AEC AEC AEC AEC AEC AEC' }],
-            tempo: 90,
-            qnPerMeasure: 4,
+            parts: [{ text: 'CEG\nFAC FAC\nAEC AEC AEC AEC', legato: 100 }],
+            options: { tempo: 90, qn_per_measure: 4 },
             metronome_expected: 0,
-            beat: 0,
             metronome: null,
             metronome_expected: Date.now(),
             metronome_flag_stop: false,
-            metronome_beat: 0,
             metronome_pulse: 0,
+            metronome_beat: 0,
+            metronome_measure: 0,
         },
         mounted: function() {
             console.log("loaded");
@@ -127,16 +128,40 @@
                     // possibly special handling to avoid futile "catch up" run
                 }
                 this.metronome_expected += this.bpminterval;
-                this.metronome = setTimeout(this.step, Math.max(0, this.bpminterval - dt)); // take into account drift
+                this.metronome = setTimeout(this.step, Math.max(0, this.bpminterval - dt));
+
+                // advance the beat and measure
+                this.metronome_pulse++;
+                if (this.metronome_pulse == PULSES_PER_QUARTER_NOTE) {
+                    this.metronome_pulse = 0;
+                }
                 if (this.metronome_pulse == 0) {
                     this.metronome_beat++;
-                    console.log(this.metronome_beat);
+                    if (this.metronome_beat == this.options.qn_per_measure) {
+                        this.metronome_beat = 0;
+                    }
+                    if (this.metronome_beat == 0) {
+                        this.metronome_measure++;
+                        this.metronome_beat = 0;
+                    }
+                    console.log(`measure ${this.metronome_measure}, beat ${this.metronome_beat}`);
                 }
-                this.metronome_pulse++;
-                this.metronome_pulse %= 24;
+
+                // start/stop playing notes
+                const pulse = this.metronome_pulse + PULSES_PER_QUARTER_NOTE * this.metronome_beat;
+                const measure = this.metronome_measure;
+                for (var [i, p] of this.midinotes.entries()) {
+                    const m = measure % p.length;
+                    if (pulse in p[m]) {
+                        // turn on/off notes
+                        console.log(i, p[m][pulse]);
+                    }
+                }
             },
             startMetronome: function() {
                 this.metronome_beat = -1;
+                this.metronome_measure = -1;
+                this.metronome_pulse = -1;
                 this.metronome_flag_stop = false;
                 this.metronome_expected = Date.now();
                 this.step();
@@ -147,7 +172,39 @@
         },
         computed: {
             bpminterval: function() {
-                return 60 / this.tempo / 24 * 1000;
+                return 60 / this.options.tempo / PULSES_PER_QUARTER_NOTE * 1000;
+            },
+            midinotes: function() {
+                part_measures = [];
+                for (var [i, p] of this.parts.entries()) {
+                    // iterate over measures
+                    measures = [];
+                    for (var [j, line] of p.text.split("\n").entries()) {
+                        line = line.trim();
+                        if (line.length == 0) {
+                            continue;
+                        }
+                        // iterate over clusters
+                        cn = {}
+                        const clusters = line.split(" ");
+                        const pulses_per_cluster = this.options.qn_per_measure * PULSES_PER_QUARTER_NOTE / clusters.length;
+                        for (var [k, cluster] of clusters.entries()) {
+                            // TODO: figure out the notes in each cluster
+                            cn[pulses_per_cluster * k] = { 'notes': cluster, 'on': true }
+                            var offset_time = (parseFloat(p.legato) / 100.0 * pulses_per_cluster);
+                            if (offset_time < 1) {
+                                offset_time = 1;
+                            } else if (offset_time >= pulses_per_cluster) {
+                                offset_time = pulses_per_cluster - 1;
+                            }
+                            cn[pulses_per_cluster * k] = { 'notes': cluster, 'press': 'on' }
+                            cn[pulses_per_cluster * k + offset_time] = { 'notes': cluster, 'press': 'off' }
+                        }
+                        measures.push(cn);
+                    }
+                    part_measures.push(measures);
+                }
+                return part_measures;
             },
         }
     });
