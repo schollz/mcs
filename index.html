@@ -77,6 +77,17 @@
     <script>
     const PULSES_PER_QUARTER_NOTE = 24;
 
+    // TODO 
+    function chordClusterToMIDIs(chord_cluster) {
+        // Tonal.Note.midi('Bb4C')
+        var lastNote = Tonal.Note.midi('C4');
+        // get the biggest Tonal Note I can
+        // if there is no number at the end, find the closest note
+        // to last note
+        // use look for undefined
+
+    }
+
     var app = new Vue({
         el: '#app',
         data: {
