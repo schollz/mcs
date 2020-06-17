@@ -30,26 +30,27 @@
 <body>
     <div id="app">
         <h1>MIDI Chord Sequencer</h1>
-        <ul>
-            <li>There are 24 pulses per quarternote</li>
-            <li>Each measure has an adjustable number of quarter notes (2 - 4)</li>
-            <li>Each line is one measure</li>
-            <li>Each note cluster (notes with no spaces between) is subdivided into a measure equally, based on the number of note clusters (e.g. <code>CEG CEG</code> at <sup>4</sup>⁄<sub>4</sub> will be played for two beats each, and <code>CEG CEG CEG CEG</code> will be played for one beat each)</li>
-            <li>A non-note character indicates a rest (e.g. <code>CEG . CEG .</code> plays Cmaj on the 1st and 3rd beat)</li>
-            <li>A note cluster is non-separated list of notes and their octaves. If there is no octave information, the note chosen will be closest to the preceding note. (e.g. <code>C3B</code> will play <code>C3</code> and <code>B2</code>, while <code>C3B3</code> will play <code>C3</code> and <code>B3</code>).</li>
-            <li>A song is a group of measures (a set of lines). Each song will be transmitted to a MIDI channel.</li>
-            <li>Instruments are loaded in a separate area and can be assigned to any MIDI channel</li>
-            <li>Songs are saved</li>
-        </ul>
         <p>{{message}}</p>
         <div v-for='(device,devi) in devices'>
             <p>{{device}}
-                <select v-model='devices[devi].part'>
-                    <option v-for='(part,index) in parts' v-bind:value='index'>part {{index}}
-                    </option>
-                </select>
+                <p v-for='(section,si) in sections'>
+                    section {{si}}
+                    <select v-model='device.parts[si]'>
+                        <option v-bind:value='-1'>silent</option>
+                        <option v-for='(part,index) in parts' v-bind:value='index'>part {{index}}
+                        </option>
+                    </select>
+                </p>
             </p>
         </div>
+        <!-- <div v-for='(device,devi) in devices'>
+    <p>{{device}}
+        <select v-model='devices[devi].part'>
+            <option v-for='(part,index) in parts' v-bind:value='index'>part {{index}}
+            </option>
+        </select>
+    </p>
+</div> -->
         <br>
         qn / measure: <input v-model='options.qn_per_measure' type='number' size=2>
         <br>
@@ -61,12 +62,16 @@
         <button v-on:click="stopSong">
             Stop
         </button>
+        <button v-on:click="sections.push({measures:4});">
+            Add section
+        </button>
         <button v-on:click="parts.push({text:``,legato:100});">
             Add part
         </button>
         <p v-for='(part,parti) in parts'>
-            part {{parti}}, legato: <input v-model='parts[parti].legato' type='number' size=2 min=0 max=100>
-            <textarea rows=6 v-model='parts[parti].text'></textarea>
+            part {{parti}}, legato: <input v-model='parts[parti].legato' type='number' size=4 min=0 max=100>
+            <textarea rows=6 v-model='parts[parti].text' style="white-space: pre;">
+</textarea>
         </p>
     </div>
     </div>
@@ -130,9 +135,10 @@
         el: '#app',
         data: {
             message: '',
-            devices: [{ name: 'op-1', part: 0 }, { name: 'sh01a', part: 0 }],
+            devices: [{ name: 'op-1', parts: [-1, -1, -1, -1, -1], part: 0 }, { name: 'sh01a', part: 0, parts: [-1, -1, -1, -1, -1] }],
             // TODO: add sections (encapsulate parts)
-            parts: [{ text: 'CEG\nFAC FAC\nAEC AEC AEC AEC', legato: 100 }],
+            sections: [{ measures: 4 }],
+            parts: [{ text: 'CEG\\nFAC FAC\nAEC AEC AEC AEC', legato: 100 }],
             options: { tempo: 90, qn_per_measure: 4 },
             metronome_expected: 0,
             metronome: null,
@@ -141,6 +147,7 @@
             metronome_pulse: 0,
             metronome_beat: 0,
             metronome_measure: 0,
+            metronome_section: 0,
         },
         mounted: function() {
             console.log("loaded");
@@ -197,18 +204,25 @@
                     console.log(`measure ${this.metronome_measure}, beat ${this.metronome_beat}`);
                 }
 
-                // start/stop playing notes
+                // for each device, emit notes from part in the current section
                 const pulse = this.metronome_pulse + PULSES_PER_QUARTER_NOTE * this.metronome_beat;
                 const measure = this.metronome_measure;
-                for (var [i, p] of this.midinotes.entries()) {
+                const section = this.metronome_section;
+                for (var [devicei, device] of this.devices.entries()) {
+                    const parti = device.parts[section];
+                    if (parti == -1) {
+                        // skip this device
+                        continue
+                    }
+                    const p = this.midinotes[parti];
                     const m = measure % p.length;
                     if (pulse in p[m]) {
                         // turn on/off notes
-                        // empty notes = rest 
+                        // empty notes = rest
                         if (p[m][pulse].notes.length == 0) {
                             console.log('rest');
                         } else {
-                            console.log(i, JSON.stringify(p[m][pulse]));
+                            console.log(devicei, parti, JSON.stringify(p[m][pulse]));
                         }
                     }
                 }
