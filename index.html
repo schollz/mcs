@@ -125,9 +125,7 @@
         return notes;
     }
 
-    // var a = chordClusterToMIDIs('BD5E4F');
-    // console.log(JSON.stringify(a));
-
+    console.log(JSON.stringify(chordClusterToMIDIs('A .')));
     var app = new Vue({
         el: '#app',
         data: {
@@ -205,7 +203,12 @@
                     const m = measure % p.length;
                     if (pulse in p[m]) {
                         // turn on/off notes
-                        console.log(i, JSON.stringify(p[m][pulse]));
+                        // empty notes = rest 
+                        if (p[m][pulse].notes.length == 0) {
+                            console.log('rest');
+                        } else {
+                            console.log(i, JSON.stringify(p[m][pulse]));
+                        }
                     }
                 }
             },
@@ -250,7 +253,9 @@
                             }
                             midi_cluster = chordClusterToMIDIs(cluster);
                             cn[pulses_per_cluster * k] = { 'notes': midi_cluster, 'press': 'on' }
-                            cn[pulses_per_cluster * k + offset_time] = { 'notes': midi_cluster, 'press': 'off' }
+                            if (midi_cluster.length > 0) {
+                                cn[pulses_per_cluster * k + offset_time] = { 'notes': midi_cluster, 'press': 'off' }
+                            }
                         }
                         measures.push(cn);
                     }
