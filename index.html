@@ -79,14 +79,54 @@
 
     // TODO 
     function chordClusterToMIDIs(chord_cluster) {
+        chord_cluster += 'z';
         // Tonal.Note.midi('Bb4C')
-        var lastNote = Tonal.Note.midi('C4');
+        var lastNote = 'C4';
+        var lastOctave = parseInt(lastNote.charAt(lastNote.length - 1));
         // get the biggest Tonal Note I can
         // if there is no number at the end, find the closest note
         // to last note
         // use look for undefined
+        var i = 0;
+        var notes = [];
+        while (i < chord_cluster.length - 1) {
+            var note = '';
+            for (var j = i + 1; j <= chord_cluster.length; j++) {
+                var note_temp = chord_cluster.substring(i, j);
+                var midi_note = Tonal.Note.midi(note_temp);
 
+                if (midi_note == null && isNaN(parseInt(note_temp.charAt(note_temp.length - 1))) == true) {
+                    // need to add octave
+                    var best_distance = 100;
+                    var best_octave = lastOctave;
+                    for (var octave = lastOctave - 1; octave <= lastOctave + 1; octave++) {
+                        var distance = Math.abs(Tonal.Interval.semitones(Tonal.Interval.distance(lastNote, note_temp + octave)));
+                        if (distance < best_distance) {
+                            best_distance = distance;
+                            best_octave = octave;
+                        }
+                    }
+                    note_temp = note_temp + best_octave;
+                    midi_note = Tonal.Note.midi(note_temp);
+                }
+                if (midi_note == undefined) {
+                    if (j == i + 1) {
+                        return notes;
+                    }
+                    i = j - 1;
+                    break
+                }
+                note = note_temp;
+            }
+            notes.push({ 'note': note, 'midi': Tonal.Note.midi(note) });
+            lastNote = note;
+            lastOctave = parseInt(lastNote.charAt(lastNote.length - 1));
+        }
+        return notes;
     }
+
+    // var a = chordClusterToMIDIs('BD5E4F');
+    // console.log(JSON.stringify(a));
 
     var app = new Vue({
         el: '#app',
@@ -165,7 +205,7 @@
                     const m = measure % p.length;
                     if (pulse in p[m]) {
                         // turn on/off notes
-                        console.log(i, p[m][pulse]);
+                        console.log(i, JSON.stringify(p[m][pulse]));
                     }
                 }
             },
@@ -208,8 +248,9 @@
                             } else if (offset_time >= pulses_per_cluster) {
                                 offset_time = pulses_per_cluster - 1;
                             }
-                            cn[pulses_per_cluster * k] = { 'notes': cluster, 'press': 'on' }
-                            cn[pulses_per_cluster * k + offset_time] = { 'notes': cluster, 'press': 'off' }
+                            midi_cluster = chordClusterToMIDIs(cluster);
+                            cn[pulses_per_cluster * k] = { 'notes': midi_cluster, 'press': 'on' }
+                            cn[pulses_per_cluster * k + offset_time] = { 'notes': midi_cluster, 'press': 'off' }
                         }
                         measures.push(cn);
                     }
