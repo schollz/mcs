@@ -1,0 +1,157 @@
+<html>
+
+<head>
+    <title>MIDI chord sequencer</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body {
+        max-width: 34em;
+        margin: 1em auto;
+    }
+
+    h1,
+    p,
+    button,
+    select,
+    li {
+        font-family: courier;
+        max-width: 34em;
+    }
+
+    textarea {
+        width: 100%;
+        overflow-x: scroll;
+        resize: none;
+        white-space: nowrap;
+    }
+    </style>
+</head>
+
+<body>
+    <div id="app">
+        <h1>MIDI Chord Sequencer</h1>
+        <ul>
+            <li>There are 24 pulses per quarternote</li>
+            <li>Each measure has an adjustable number of quarter notes (2 - 4)</li>
+            <li>Each line is one measure</li>
+            <li>Each note cluster (notes with no spaces between) is subdivided into a measure equally, based on the number of note clusters (e.g. <code>CEG CEG</code> at <sup>4</sup>⁄<sub>4</sub> will be played for two beats each, and <code>CEG CEG CEG CEG</code> will be played for one beat each)</li>
+            <li>A non-note character indicates a rest (e.g. <code>CEG . CEG .</code> plays Cmaj on the 1st and 3rd beat)</li>
+            <li>A note cluster is non-separated list of notes and their octaves. If there is no octave information, the note chosen will be closest to the preceding note. (e.g. <code>C3B</code> will play <code>C3</code> and <code>B2</code>, while <code>C3B3</code> will play <code>C3</code> and <code>B3</code>).</li>
+            <li>A song is a group of measures (a set of lines). Each song will be transmitted to a MIDI channel.</li>
+            <li>Instruments are loaded in a separate area and can be assigned to any MIDI channel</li>
+            <li>Songs are saved</li>
+        </ul>
+        <p>{{message}}</p>
+        <div v-for='(device,devi) in devices'>
+            <p>{{device}}
+                <select v-model='devices[devi].part'>
+                    <option v-for='(part,index) in parts' v-bind:value='index'>part {{index}}
+                    </option>
+                </select>
+            </p>
+        </div>
+        <br>
+        qn / measure: <input v-model='qnPerMeasure' type='number' size=2>
+        <br>
+        tempo: <input v-model='tempo' type='number' size=2>
+        <br>
+        <button v-on:click="startSong">
+            Start
+        </button>
+        <button v-on:click="stopSong">
+            Stop
+        </button>
+        <button v-on:click="parts.push({text:``});">
+            Add part
+        </button>
+        <p v-for='(part,parti) in parts'>
+            part {{parti}}
+            <textarea rows=6 v-model='parts[parti].text'></textarea>
+        </p>
+    </div>
+    </div>
+    <script src="./static/js/chord-magic.min.js"></script>
+    <script src="./static/js/vue.js"></script>
+    <script src="./static/js/tonal.min.js"></script>
+    <script src="./static/js/webmidi.js"></script>
+    <script>
+    var app = new Vue({
+        el: '#app',
+        data: {
+            message: '',
+            devices: [{ name: 'op-1', part: 0 }, { name: 'sh01a', part: 0 }],
+            parts: [{ text: 'CEG\nFAC FAC\nAEC AEC AEC AEC AEC AEC AEC AEC AEC AEC AEC AEC AEC AEC AEC AEC AEC AEC AEC AEC' }],
+            tempo: 90,
+            qnPerMeasure: 4,
+            metronome_expected: 0,
+            beat: 0,
+            metronome: null,
+            metronome_expected: Date.now(),
+            metronome_flag_stop: false,
+            metronome_beat: 0,
+            metronome_pulse: 0,
+        },
+        mounted: function() {
+            console.log("loaded");
+            var _this = this;
+            WebMidi.enable(function(err) {
+                if (err) {
+                    _this.message = "WebMidi could not be enabled, make sure you are using Chrome"
+                } else {
+                    names = []
+                    for (var i = 0; i < WebMidi.outputs.length; i++) {
+                        _this.devices.push({ name: WebMidi.outputs[i].name, part: 0 })
+                    }
+                    if (_this.devices.length == 0) {
+                        _this.message = "No devices attached."
+                    }
+                }
+            });
+        },
+        methods: {
+            startSong: function(e) {
+                console.log("starting song");
+                this.startMetronome();
+            },
+            stopSong: function(e) {
+                console.log("stopping song");
+                this.stopMetronome();
+            },
+            step: function(e) {
+                if (this.metronome_flag_stop) {
+                    return;
+                }
+                var dt = Date.now() - this.metronome_expected;
+                if (dt > this.bpminterval) {
+                    // something really bad happened. Maybe the browser (tab) was inactive?
+                    // possibly special handling to avoid futile "catch up" run
+                }
+                this.metronome_expected += this.bpminterval;
+                this.metronome = setTimeout(this.step, Math.max(0, this.bpminterval - dt)); // take into account drift
+                if (this.metronome_pulse == 0) {
+                    this.metronome_beat++;
+                    console.log(this.metronome_beat);
+                }
+                this.metronome_pulse++;
+                this.metronome_pulse %= 24;
+            },
+            startMetronome: function() {
+                this.metronome_beat = -1;
+                this.metronome_flag_stop = false;
+                this.metronome_expected = Date.now();
+                this.step();
+            },
+            stopMetronome: function() {
+                this.metronome_flag_stop = true;
+            },
+        },
+        computed: {
+            bpminterval: function() {
+                return 60 / this.tempo / 24 * 1000;
+            },
+        }
+    });
+    </script>
+</body>
+
+</html>
