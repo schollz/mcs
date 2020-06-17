@@ -31,8 +31,24 @@
     <div id="app">
         <h1>MIDI Chord Sequencer</h1>
         <p>{{message}}</p>
+        <button v-on:click="startSong">
+            Start
+        </button>
+        <button v-on:click="stopSong">
+            Stop
+        </button>
+        <h1>Parts</h1>
+        <button v-on:click="parts.push({text:``,legato:100});">
+            Add part
+        </button>
+        <p v-for='(part,parti) in parts'>
+            part {{parti}}, legato: <input v-model='parts[parti].legato' type='number' size=4 min=0 max=100>
+            <textarea rows=6 v-model='parts[parti].text' style="white-space: pre;"></textarea>
+        </p>
+        <h1>Devices</h1>
         <div v-for='(device,devi) in devices'>
-            <p>{{device}}
+            <p>{{device.name}}
+                <!--<span v-if="device.current">playing {{device.current}}</span>-->
                 <p v-for='(section,si) in sections'>
                     section {{si}}
                     <select v-model='device.parts[si]'>
@@ -43,35 +59,16 @@
                 </p>
             </p>
         </div>
-        <!-- <div v-for='(device,devi) in devices'>
-    <p>{{device}}
-        <select v-model='devices[devi].part'>
-            <option v-for='(part,index) in parts' v-bind:value='index'>part {{index}}
-            </option>
-        </select>
-    </p>
-</div> -->
-        <br>
+        <h1>Options</h1>
         qn / measure: <input v-model='options.qn_per_measure' type='number' size=2>
         <br>
         tempo: <input v-model='options.tempo' type='number' size=2>
-        <br>
-        <button v-on:click="startSong">
-            Start
-        </button>
-        <button v-on:click="stopSong">
-            Stop
-        </button>
+        <h1>Sections</h1>
         <button v-on:click="sections.push({measures:4});">
             Add section
         </button>
-        <button v-on:click="parts.push({text:``,legato:100});">
-            Add part
-        </button>
-        <p v-for='(part,parti) in parts'>
-            part {{parti}}, legato: <input v-model='parts[parti].legato' type='number' size=4 min=0 max=100>
-            <textarea rows=6 v-model='parts[parti].text' style="white-space: pre;">
-</textarea>
+        <p v-for='(section,i) in sections'>
+            section {{i}} measures: <input v-model='section.measures' type='number' size=2>
         </p>
     </div>
     </div>
@@ -135,11 +132,12 @@
         el: '#app',
         data: {
             message: '',
-            devices: [{ name: 'op-1', parts: [-1, -1, -1, -1, -1], part: 0 }, { name: 'sh01a', part: 0, parts: [-1, -1, -1, -1, -1] }],
+            devices: [{ name: 'op-1', parts: [-1, -1, -1, -1, -1], current: '' }, { name: 'sh01a', parts: [-1, -1, -1, -1, -1], current: '' }],
             // TODO: add sections (encapsulate parts)
             sections: [{ measures: 4 }],
-            parts: [{ text: 'CEG\\nFAC FAC\nAEC AEC AEC AEC', legato: 100 }],
+            parts: [{ text: 'CEG\nFAC FAC\nAEC AEC AEC AEC', legato: 100 }],
             options: { tempo: 90, qn_per_measure: 4 },
+            is_playing: false,
             metronome_expected: 0,
             metronome: null,
             metronome_expected: Date.now(),
@@ -158,7 +156,7 @@
                 } else {
                     names = []
                     for (var i = 0; i < WebMidi.outputs.length; i++) {
-                        _this.devices.push({ name: WebMidi.outputs[i].name, part: 0 })
+                        _this.devices.push({ name: WebMidi.outputs[i].name, parts: [-1, -1, -1, -1, -1, -1, -1] })
                     }
                     if (_this.devices.length == 0) {
                         _this.message = "No devices attached."
@@ -180,7 +178,9 @@
                     return;
                 }
                 var dt = Date.now() - this.metronome_expected;
+                console.log(dt);
                 if (dt > this.bpminterval) {
+                    console.log('UH OH UH OH')
                     // something really bad happened. Maybe the browser (tab) was inactive?
                     // possibly special handling to avoid futile "catch up" run
                 }
@@ -221,13 +221,20 @@
                         // empty notes = rest
                         if (p[m][pulse].notes.length == 0) {
                             console.log('rest');
+                            this.devices[devicei].current = ''
                         } else {
                             console.log(devicei, parti, JSON.stringify(p[m][pulse]));
+                            if (p[m][pulse].press == 'on') {
+                                this.devices[devicei].current = `measure ${m}, pulse ${pulse}: ${p[m][pulse].cluster}`;
+                            } else {
+                                this.devices[devicei].current = '';
+                            }
                         }
                     }
                 }
             },
             startMetronome: function() {
+                this.is_playing = true;
                 this.metronome_beat = -1;
                 this.metronome_measure = -1;
                 this.metronome_pulse = -1;
@@ -236,6 +243,7 @@
                 this.step();
             },
             stopMetronome: function() {
+                this.is_playing = false;
                 this.metronome_flag_stop = true;
             },
         },
@@ -267,9 +275,9 @@
                                 offset_time = pulses_per_cluster - 1;
                             }
                             midi_cluster = chordClusterToMIDIs(cluster);
-                            cn[pulses_per_cluster * k] = { 'notes': midi_cluster, 'press': 'on' }
+                            cn[pulses_per_cluster * k] = { 'cluster': cluster, 'notes': midi_cluster, 'press': 'on' }
                             if (midi_cluster.length > 0) {
-                                cn[pulses_per_cluster * k + offset_time] = { 'notes': midi_cluster, 'press': 'off' }
+                                cn[pulses_per_cluster * k + offset_time] = { 'cluster': cluster, 'notes': midi_cluster, 'press': 'off' }
                             }
                         }
                         measures.push(cn);
