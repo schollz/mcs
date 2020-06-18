@@ -13,7 +13,7 @@
     p,
     button,
     select,
-    li {
+    li,div {
         font-family: courier;
         max-width: 34em;
     }
@@ -41,23 +41,27 @@
         <button v-on:click="parts.push({text:``,legato:100});">
             Add part
         </button>
-        <p v-for='(part,parti) in parts'>
-            part {{parti}}, legato: <input v-model='parts[parti].legato' type='number' size=4 min=0 max=100>
+        <div v-for='(part,parti) in parts'>
+            <h2>part {{parti+1}}</h2>
+            <p>legato: <input v-model='parts[parti].legato' type='number' size=4 min=0 max=100></p>
             <textarea rows=6 v-model='parts[parti].text' style="white-space: pre;"></textarea>
-        </p>
+        </div>
         <h1>Devices</h1>
         <div v-for='(device,devi) in devices'>
-            <p>{{device.name}}
+            <div>
+                <h2>{{device.name}}</h2>
+                <p>channel <input v-model='device.channel' type='number' size=4 min=1 max=16></p>
                 <!--<span v-if="device.current">playing {{device.current}}</span>-->
-                <p v-for='(section,si) in sections'>
-                    section {{si}}
-                    <select v-model='device.parts[si]'>
-                        <option v-bind:value='-1'>silent</option>
-                        <option v-for='(part,index) in parts' v-bind:value='index'>part {{index}}
-                        </option>
-                    </select>
-                </p>
-            </p>
+                <div v-for='(section,si) in sections'>
+                    <p>section {{si+1}}
+                        <select v-model='device.parts[si]'>
+                            <option v-bind:value='-1'>silent</option>
+                            <option v-for='(part,index) in parts' v-bind:value='index'>part {{index+1}}
+                            </option>
+                        </select>
+                    </p>
+                </div>
+            </div>
         </div>
         <h1>Options</h1>
         qn / measure: <input v-model='options.qn_per_measure' type='number' size=2>
@@ -68,7 +72,7 @@
             Add section
         </button>
         <p v-for='(section,i) in sections'>
-            section {{i}} measures: <input v-model='section.measures' type='number' size=2>
+            section {{i+1}} measures: <input v-model='section.measures' type='number' size=2>
         </p>
     </div>
     </div>
@@ -132,7 +136,7 @@
         el: '#app',
         data: {
             message: '',
-            devices: [{ name: 'op-1', parts: [-1, -1, -1, -1, -1], current: '' }, { name: 'sh01a', parts: [-1, -1, -1, -1, -1], current: '' }],
+            devices: [{ name: 'op-1', channel: 1, parts: [-1, -1, -1, -1, -1], current: '' }, { name: 'sh01a', channel: 1, parts: [-1, -1, -1, -1, -1], current: '' }],
             // TODO: add sections (encapsulate parts)
             sections: [{ measures: 4 }],
             parts: [{ text: 'CEG\nFAC FAC\nAEC AEC AEC AEC', legato: 100 }],
