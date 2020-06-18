@@ -67,6 +67,9 @@
         qn / measure: <input v-model='options.qn_per_measure' type='number' size=2>
         <br>
         tempo: <input v-model='options.tempo' type='number' size=2>
+        <br>
+        send midi sync: <input type="checkbox" id="checkbox" v-model="options.use_midi_clock">
+        <label for="checkbox">{{ options.use_midi_clock }}</label>
         <h1>Sections</h1>
         <button v-on:click="sections.push({measures:4});">
             Add section
@@ -76,13 +79,12 @@
         </p>
     </div>
     </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/1.0.11/pako.min.js"></script>
     <script src="./static/js/chord-magic.min.js"></script>
     <script src="./static/js/vue.js"></script>
     <script src="./static/js/tonal.min.js"></script>
     <script src="./static/js/webmidi.js"></script>
     <script>
-    // TODO: encode "parts" state in the URL
-
     const PULSES_PER_QUARTER_NOTE = 24;
 
     function chordClusterToMIDIs(chord_cluster, lastNote) {
@@ -141,7 +143,7 @@
             devices: [],
             sections: [{ measures: 4 }],
             parts: [{ text: 'C E G C E G C E G', legato: 100 }],
-            options: { tempo: 90, qn_per_measure: 4 },
+            options: { tempo: 90, qn_per_measure: 4, use_midi_clock: false },
             is_playing: false,
             metronome_expected: 0,
             metronome: null,
@@ -154,6 +156,9 @@
             metronome_section_measure: 0,
         },
         mounted: function() {
+            // try loading hash 
+            this.getstate();
+
             console.log("loaded");
             var _this = this;
             WebMidi.enable(function(err) {
@@ -173,6 +178,9 @@
         methods: {
             startSong: function(e) {
                 console.log("starting song");
+                // save state 
+                window.location.hash = this.currentstate;
+                // start metronome
                 this.startMetronome();
             },
             stopSong: function(e) {
@@ -192,14 +200,15 @@
                 this.metronome_expected += this.bpminterval;
                 this.metronome = setTimeout(this.step, Math.max(0, this.bpminterval - dt));
 
-                // TODO: make midi clock optional
-                // // send out midi clock
-                // for (var i = 0; i < WebMidi.outputs.length; i++) {
-                //     if (WebMidi.outputs[i].name.includes("Through")) {
-                //         continue;
-                //     }
-                //     WebMidi.outputs[i].sendClock();
-                // }
+                if (this.options.use_midi_clock) {
+                    // send out midi clock
+                    for (var i = 0; i < WebMidi.outputs.length; i++) {
+                        if (WebMidi.outputs[i].name.includes("Through")) {
+                            continue;
+                        }
+                        WebMidi.outputs[i].sendClock();
+                    }
+                }
 
                 // advance the beat and measure and section
                 this.metronome_pulse++;
@@ -281,6 +290,18 @@
                 this.is_playing = false;
                 this.metronome_flag_stop = true;
             },
+            getstate: function(s) {
+                try {
+                    // return current state;
+                    var output = window.location.hash.substr(1);
+                    var originalInput = pako.ungzip(atob(output), { to: 'string' });
+                    var s = JSON.parse(originalInput);
+                    this.sections = s.sections;
+                    this.parts = s.parts;
+                    this.options = s.options;
+                    console.log("loaded data");
+                } catch (e) {}
+            },
         },
         computed: {
             bpminterval: function() {
@@ -292,7 +313,13 @@
                 s.sections = this.sections;
                 s.parts = this.parts;
                 s.options = this.options;
-                return btoa(JSON.stringify(s));
+
+                var input = JSON.stringify(s);
+                var output = btoa(pako.gzip(input, { to: 'string' }));
+                // console.log("input: " + input.length);
+                // console.log("compressed gzip string: " + output.length);
+                // var originalInput = pako.ungzip(atob(output), { to: 'string' });
+                return output;
             },
             midinotes: function() {
                 part_measures = [];
