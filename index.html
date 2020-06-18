@@ -81,13 +81,13 @@
     <script src="./static/js/tonal.min.js"></script>
     <script src="./static/js/webmidi.js"></script>
     <script>
+    // TODO: encode "parts" state in the URL
+
     const PULSES_PER_QUARTER_NOTE = 24;
 
-    // TODO 
-    function chordClusterToMIDIs(chord_cluster) {
+    function chordClusterToMIDIs(chord_cluster, lastNote) {
         chord_cluster += 'z';
         // Tonal.Note.midi('Bb4C')
-        var lastNote = 'C4';
         var lastOctave = parseInt(lastNote.charAt(lastNote.length - 1));
         // get the biggest Tonal Note I can
         // if there is no number at the end, find the closest note
@@ -131,15 +131,16 @@
         return notes;
     }
 
-    console.log(JSON.stringify(chordClusterToMIDIs('A .')));
+    console.log(JSON.stringify(chordClusterToMIDIs('A .', 'C4')));
+
     var app = new Vue({
         el: '#app',
         data: {
             message: '',
-            devices: [{ name: 'op-1', channel: 1, parts: [-1, -1, -1, -1, -1], current: '' }, { name: 'sh01a', channel: 1, parts: [-1, -1, -1, -1, -1], current: '' }],
-            // TODO: add sections (encapsulate parts)
+            // devices: [{ name: 'op-1', channel: 1, parts: [-1, -1, -1, -1, -1], current: '' }],
+            devices: [],
             sections: [{ measures: 4 }],
-            parts: [{ text: 'CEG\nFAC FAC\nAEC AEC AEC AEC', legato: 100 }],
+            parts: [{ text: 'C E G C E G C E G', legato: 100 }],
             options: { tempo: 90, qn_per_measure: 4 },
             is_playing: false,
             metronome_expected: 0,
@@ -160,7 +161,7 @@
                 } else {
                     names = []
                     for (var i = 0; i < WebMidi.outputs.length; i++) {
-                        _this.devices.push({ name: WebMidi.outputs[i].name, parts: [-1, -1, -1, -1, -1, -1, -1] })
+                        _this.devices.push({ name: WebMidi.outputs[i].name, parts: [-1, -1, -1, -1, -1, -1, -1], channel: 1 })
                     }
                     if (_this.devices.length == 0) {
                         _this.message = "No devices attached."
@@ -182,7 +183,6 @@
                     return;
                 }
                 var dt = Date.now() - this.metronome_expected;
-                console.log(dt);
                 if (dt > this.bpminterval) {
                     console.log('UH OH UH OH')
                     // something really bad happened. Maybe the browser (tab) was inactive?
@@ -191,7 +191,16 @@
                 this.metronome_expected += this.bpminterval;
                 this.metronome = setTimeout(this.step, Math.max(0, this.bpminterval - dt));
 
+                // send out midi clock
+                for (var i = 0; i < WebMidi.outputs.length; i++) {
+                    if (WebMidi.outputs[i].name.includes("Through")) {
+                        continue;
+                    }
+                    WebMidi.outputs[i].sendClock();
+                }
+
                 // advance the beat and measure
+                // TODO: advance section
                 this.metronome_pulse++;
                 if (this.metronome_pulse == PULSES_PER_QUARTER_NOTE) {
                     this.metronome_pulse = 0;
@@ -218,20 +227,30 @@
                         // skip this device
                         continue
                     }
-                    const p = this.midinotes[parti];
-                    const m = measure % p.length;
-                    if (pulse in p[m]) {
-                        // turn on/off notes
-                        // empty notes = rest
-                        if (p[m][pulse].notes.length == 0) {
-                            console.log('rest');
-                            this.devices[devicei].current = ''
-                        } else {
-                            console.log(devicei, parti, JSON.stringify(p[m][pulse]));
-                            if (p[m][pulse].press == 'on') {
-                                this.devices[devicei].current = `measure ${m}, pulse ${pulse}: ${p[m][pulse].cluster}`;
+                    const pnotes = this.midinotes[parti];
+                    const m = measure % pnotes.length;
+                    if (pulse in pnotes[m]) {
+                        for (var [pnotesi, p] of pnotes[m][pulse].entries()) {
+                            console.log('pnotesi', pnotesi, p)
+                            // turn on/off notes
+                            // empty notes = rest
+                            console.log(p);
+                            if (p.notes.length == 0) {
+                                console.log('rest');
+                                this.devices[devicei].current = ''
                             } else {
-                                this.devices[devicei].current = '';
+                                console.log(devicei, parti, JSON.stringify(p));
+                                if (p.press == 'on') {
+                                    this.devices[devicei].current = `measure ${m}, pulse ${pulse}: ${p.cluster}`;
+                                    for (var [notei, note] of p.notes.entries()) {
+                                        WebMidi.outputs[devicei].playNote(note.note, this.devices[devicei].channel);
+                                    }
+                                } else {
+                                    this.devices[devicei].current = '';
+                                    for (var [notei, note] of p.notes.entries()) {
+                                        WebMidi.outputs[devicei].stopNote(note.note, this.devices[devicei].channel);
+                                    }
+                                }
                             }
                         }
                     }
@@ -247,6 +266,9 @@
                 this.step();
             },
             stopMetronome: function() {
+                for (var [devicei, device] of this.devices.entries()) {
+                    WebMidi.outputs[devicei].stopNote('all');
+                }
                 this.is_playing = false;
                 this.metronome_flag_stop = true;
             },
@@ -269,25 +291,43 @@
                         cn = {}
                         const clusters = line.split(" ");
                         const pulses_per_cluster = this.options.qn_per_measure * PULSES_PER_QUARTER_NOTE / clusters.length;
+                        lastNote = 'C4';
                         for (var [k, cluster] of clusters.entries()) {
-                            // TODO: figure out the notes in each cluster
-                            cn[pulses_per_cluster * k] = { 'notes': cluster, 'on': true }
-                            var offset_time = (parseFloat(p.legato) / 100.0 * pulses_per_cluster);
+                            // figure out the notes in each cluster
+                            var offset_time = Math.round(parseFloat(p.legato) / 100.0 * pulses_per_cluster);
                             if (offset_time < 1) {
                                 offset_time = 1;
                             } else if (offset_time >= pulses_per_cluster) {
-                                offset_time = pulses_per_cluster - 1;
+                                offset_time = pulses_per_cluster;
                             }
-                            midi_cluster = chordClusterToMIDIs(cluster);
-                            cn[pulses_per_cluster * k] = { 'cluster': cluster, 'notes': midi_cluster, 'press': 'on' }
+                            midi_cluster = chordClusterToMIDIs(cluster, lastNote);
                             if (midi_cluster.length > 0) {
-                                cn[pulses_per_cluster * k + offset_time] = { 'cluster': cluster, 'notes': midi_cluster, 'press': 'off' }
+                                lastNote = midi_cluster[midi_cluster.length - 1].note;
+                            }
+                            var start = Math.round(pulses_per_cluster * k);
+                            var end = Math.round(pulses_per_cluster * k + offset_time);
+                            if (start > 95) {
+                                start = 95;
+                            }
+                            if (end > 95) {
+                                end = 95;
+                            }
+                            if (start in cn == false) {
+                                cn[start] = [];
+                            }
+                            if (end in cn == false) {
+                                cn[end] = [];
+                            }
+                            cn[start].push({ 'cluster': cluster, 'notes': midi_cluster, 'press': 'on' })
+                            if (midi_cluster.length > 0) {
+                                cn[end].unshift({ 'cluster': cluster, 'notes': midi_cluster, 'press': 'off' })
                             }
                         }
                         measures.push(cn);
                     }
                     part_measures.push(measures);
                 }
+                console.log(JSON.stringify(part_measures, null, 4))
                 return part_measures;
             },
         }
