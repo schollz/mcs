@@ -191,6 +191,7 @@
                 this.metronome_expected += this.bpminterval;
                 this.metronome = setTimeout(this.step, Math.max(0, this.bpminterval - dt));
 
+                // TODO: make midi clock optional
                 // send out midi clock
                 for (var i = 0; i < WebMidi.outputs.length; i++) {
                     if (WebMidi.outputs[i].name.includes("Through")) {
